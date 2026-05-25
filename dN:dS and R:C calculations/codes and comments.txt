@@ -1,0 +1,142 @@
+##Tranlate all CDS sequences in each folder named based on the protein id
+conda activate bio
+find . -maxdepth 2 -type f -name 'seq.fasta' -exec sh -c 'seqkit translate "$1" -f 1 -T 1 --trim -o "$(dirname "$1")/pro.fasta"' _ {} \;
+
+
+##alignment using mafft
+find . -type f -name "pro.fasta" -exec sh -c 'for f; do dir=$(dirname "$f"); mafft --auto --thread -1 "$f" > "$dir/apro.fasta"; done' sh {} +
+
+
+### run PAL2NAL
+find . -type f -name "apro.fasta" -print0 | while IFS= read -r -d '' f; do dir=$(dirname "$f"); if [ -f "$dir/seq.fasta" ]; then pal2nal.pl "$dir/apro.fasta" "$dir/seq.fasta" -output fasta > "$dir/codon_aln.fasta"; fi; done
+
+
+##trimming
+find . -type f -name "codon_aln.fasta" -print0 | while IFS= read -r -d '' f; do dir=$(dirname "$f"); base=$(basename "$f"); ( cd "$dir" && Gblocks "$base" -t=c -b5=h ); done
+
+
+##rename trimmed sequences
+find . -type f -name "codon_aln.fasta-gb" -print0 | while IFS= read -r -d '' g; do mv "$g" "$(dirname "$g")/codon_aln_t.fasta"; done
+
+
+##copy species tree to all subfolders
+for d in */; do [ -d "$d" ] && cp species_tree.nwk "$d"; done
+
+
+##prunning
+find . -mindepth 1 -type d -exec sh -c 'cd "$1" || exit 1; { sed -n "1p" species_tree.nwk; sed -n "2p" species_tree.nwk | nw_prune -v - $(grep ">" codon_aln_t.fasta | sed "s/>//"); } > pruned_tree.nwk' sh {} \;
+
+
+##copy control file to all subfolder
+for d in */; do [ -d "$d" ] && cp codeml.ctl "$d"; done
+
+
+##paml (run as a batch job)
+parallel -j+0 --wd {} codeml codeml.ctl ::: */
+
+
+##omega extraction
+find . -mindepth 1 -type d -exec awk -F'= *' '/^omega \(dN\/dS\)/{gsub(/^[ \t]+/,"",$2); print FILENAME ": " $2; exit}' {}/out \; > dNdS
+
+
+##Find domains (run as a batch job)
+module load hmmer
+find . -type f -name "pro.fasta" | while read fasta; do dir=$(dirname "$fasta"); name=$(basename "$dir"); echo "Running hmmscan on $name..."; hmmscan --cut_ga --domtblout "$dir/results.domtbl" /data/atate_lab/Danial/dataclean_1/pfam/Pfam-A.hmm "$fasta" > "$dir/domains.txt"; done
+
+
+#pfam result to tsv
+find . -mindepth 2 -type f -name "results.domtbl" -exec sh -c 'awk '\''BEGIN{OFS="\t";print "query","domain","pfam_acc","i_evalue","ali_from","ali_to","env_from","env_to"} $1 !~ /^#/ {print $4,$1,$2,$13,$18,$19,$20,$21}'\'' "$1" > "$(dirname "$1")/domains.tsv"' sh {} \;
+
+
+run the R files: 
+filter domains by evalue and len.R 
+find domain CDS.R
+find domain prot.R
+
+and then:
+
+
+##align domains (as a batch job mafft_domains.sh)
+find . -mindepth 3 -type f -name '*_pro*' -print0 | xargs -0 -I{} bash -lc 'f="$1"; out="${f%.*}.aln"; echo "Aligning: $f -> $out"; mafft --auto "$f" > "$out"' _ {}
+
+##copy species tree to all domain folders
+find . -mindepth 2 -type d -exec cp ./species_tree.nwk {} \;
+
+
+##prune the trees based on the species having the domain
+conda activate bio
+find . -mindepth 2 -type d -exec sh -c 'cd "$1" || exit 1; fasta_file=$(ls *.fasta | grep -v "_pro\.fasta"); { sed -n "1p" species_tree.nwk; sed -n "2p" species_tree.nwk | nw_prune -v - $(grep ">" "$fasta_file" | sed "s/>//"); } > pruned_tree.nwk' sh {} \;
+
+
+##run PAL2NAL for all domains
+conda activate bio
+find . -mindepth 2 -maxdepth 2 -type d -exec sh -c 'cd "$1" || exit 1; for pro in *_pro.aln; do [ -e "$pro" ] || continue; base=${pro%_pro.aln}; nuc="$base.fasta"; [ -f "$nuc" ] || { echo "Skipping: $PWD (missing $nuc)" >&2; continue; }; pal2nal.pl "$pro" "$nuc" -output fasta > "codon_aln.fasta"; done' sh {} \;
+
+if any error was given
+find . -mindepth 2 -maxdepth 2 -type d -exec sh -c 'cd "$1" || exit 1; for pro in *_pro.aln; do [ -e "$pro" ] || continue; base=${pro%_pro.aln}; nuc="$base.fasta"; [ -f "$nuc" ] || { echo "Skipping: $PWD (missing $nuc)" >&2; continue; }; tmp=$(mktemp); if pal2nal.pl "$pro" "$nuc" -output fasta >"$tmp"; then mv "$tmp" codon_aln.fasta; else echo "pal2nal failed in $PWD for $pro / $nuc" >&2; rm -f "$tmp"; fi; done' sh {} \;
+
+
+##trimming for the domains
+find . -mindepth 3 -maxdepth 3 -type f -name "codon_aln.fasta" -print0 | while IFS= read -r -d '' f; do dir=$(dirname "$f"); base=$(basename "$f"); (cd "$dir" && Gblocks "$base" -t=c -b5=h); done
+
+#renaming the trimmed
+find . -mindepth 3 -maxdepth 3 -type f -name "codon_aln.fasta-gb" -print0 | while IFS= read -r -d '' g; do mv "$g" "$(dirname "$g")/codon_aln_t.fasta"; done
+
+
+
+##copy "codeml.ctl" to all domian folders
+find . -mindepth 2 -type d -exec cp ./codeml_dom.ctl {} \;
+
+
+
+##paml (run as a batch job)
+parallel -j+0 --wd {} codeml codeml_dom.ctl ::: $(find . -mindepth 2 -maxdepth 2 -type d -name '*_20*')
+
+
+#extract omega
+find . -type f -name out -exec awk -F'= *' '/^omega \(dN\/dS\)/{gsub(/^[ \t]+/,"",$2); print "\""FILENAME"\": "$2","}' {} + | sed '$ s/,$//' | awk 'BEGIN{print "{"} {print} END{print "}"}' > dNdS_gene_domain.txt
+
+
+#extracting dn and ds
+find . -type f -name out -exec awk 'BEGIN{print "{";first=1} FNR==1{dn="";ds="";printed=0} /^tree length for dN:[[:space:]]*/{dn=$NF} /^tree length for dS:[[:space:]]*/{ds=$NF} dn!=""&&ds!=""&&!printed{if(!first)printf(",\n");printf("\"%s\": {\"dN\": %s, \"dS\": %s}",FILENAME,dn,ds);printed=1;first=0} END{print "\n}"}' {} + > dN_and_ds.txt
+
+
+
+
+
+
+
+
+
+##for the gene tree
+find . -type f -name "apro.fasta" -exec sh -c 'dir=$(dirname "{}"); FastTree -wag -gamma -pseudo -spr 4 -mlacc 2 -slownni "{}" > "$dir/final_tree.tree"' \;
+
+
+find . -mindepth 1 -maxdepth 1 -type d -exec sh -c 'cd "$1" || exit 1; sed -n "1p" final_tree.tree | nw_prune -v - $(grep ">" codon_aln_t.fasta | sed "s/>//") > pruned_genetree.nwk' sh {} \;
+
+
+
+
+
+
+
+### getting branch changes
+find . -mindepth 2 -type f -name "rst" -exec sh -c 'for file do dir=$(dirname "$file"); awk '\''/^Branch[[:space:]][0-9]+:/ { if (printed_any) print ""; print $0; inblock=1; printed_any=1; next } inblock && /->/ { print }'\'' "$file" > "$dir/branches"; done' sh {} +
+
+#length of the pro
+find . -type f -name "rst" -execdir sh -c \ 'awk "/List of extant and reconstructed sequences/{flag=1;next} flag && NF {print \$2; exit}" rst > length' \;
+
+
+
+as batch jobs run:
+Parse and classify R and C.R
+Cchanges.R
+Rchanges.R
+
+#for radical changes
+find . -type f -name 'normalized_radical_all.json' -print0 | xargs -0 -I {} jq -r '. as $a | ($a[0] | "\(.name)/\(.ratio)"), ($a[1:][]? | "\($a[0].name)/\(.name)/\(.ratio)")' {} >> protein_domain_ratios_all.txt
+
+#for conserved changes
+find . -type f -name 'normalized_conserved_all.json' -print0 | xargs -0 -I {} jq -r '. as $a | ($a[0] | "\(.name)/\(.ratio)"), ($a[1:][]? | "\($a[0].name)/\(.name)/\(.ratio)")' {} >> protein_domain_ratios_conserved_all.txt
+
+
