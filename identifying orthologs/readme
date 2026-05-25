@@ -1,4 +1,0 @@
-Here an example is given of how to identify orthologous genes. Here, D. simulans is used as an example. To run the code, you need to download the proteome of D. simulans here: https://www.ncbi.nlm.nih.gov/datasets/genome/GCF_016746395.2/ and name it protein.faa.
-
-To run the blast:
-blastp -query seq.fasta -db protein.faa -out pleio.txt -outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore"
