@@ -1,0 +1,1 @@
+Running these R codes create folders named according to protein IDs. Each folder (corresponding to a protein/gene) contains a seq.fasta file that includes the CDS sequences for orthologs of that gene.
