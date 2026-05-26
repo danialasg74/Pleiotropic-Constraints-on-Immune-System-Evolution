@@ -1,0 +1,11 @@
+1- bootstraping.ipynb produces csv files containing bootstrapped gene ids
+
+2- each bootstrapping_{class}.ipynb uses the csv files and .npy, which is the output of SFS.py, to sum the corresponding per-gene zerofold and fourfold SFS across genes, while rounding projected counts to preserve the total number of site
+
+3- The result is fed to MultiDFE 
+
+4- omega_na.R processes MultiDFE outputs and produces omega_na (fixprob) per bootstrap in {class}.txt files
+
+5- omega_a & alpha.R uses fixprob and popfly info to calculate omega_a and alpha
+
+
