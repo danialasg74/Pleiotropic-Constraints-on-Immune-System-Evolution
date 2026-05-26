@@ -1,0 +1,125 @@
+#################### getting Drosophila genome degeneracy scores ####################
+
+First I used https://github.com/harvardinformatics/degenotate to find 0 fold and 4 fold positions within the fly genome using NCBI annotation (gff) and genome (GCF_000001215.4_Release_6_plus_ISO1_MT_genomic.fna) using degenotate.sh:
+
+
+python degenotate.py \
+  -a genomic.gff \
+  -g GCF_000001215.4_Release_6_plus_ISO1_MT_genomic.fna \
+  -o degenotate_ncbi_out \
+  --overwrite \
+  -d " "
+
+
+
+This produces degeneracy-all-sites.bed: a bed-like file that contains the degeneracy score (0-, 2-, 3-, or 4-fold) of every coding site
+
+#################### getting 0 and 4 fold sites ####################
+
+Then I got 0 and 4 fold sites using 4_0_fold.py:
+
+import gzip
+
+DEGEN_BED = "degenotate_ncbi_out/degeneracy-all-sites.bed"
+OUT_4D = "fourfold_sites.bed"
+OUT_0D = "zerofold_sites.bed"
+
+with open(DEGEN_BED, "rt") as f, open(OUT_4D, "w") as o4, open(OUT_0D, "w") as o0:
+    for line in f:
+        if not line.strip() or line.startswith("#"):
+            continue
+        chrom, start, end, site_id, deg, *rest = line.rstrip("\n").split("\t")
+        if deg == "4":
+            o4.write(f"{chrom}\t{start}\t{end}\n")
+        elif deg == "0":
+            o0.write(f"{chrom}\t{start}\t{end}\n")
+
+print("Wrote", OUT_4D, "and", OUT_0D)
+
+
+
+#################### ranaming scaffold ids to chromosome name ####################
+
+This is done using the rename.py file, which produces:
+
+zerofold_sites.destnames.bed
+fourfold_sites.destnames.bed
+
+
+
+#################### scaffolds are named according to the chromosome ####################
+
+
+(base) [asgarid@gw02 degenotate_ncbi_out]$ awk '!seen[$1]++' zerofold_sites.bed
+NC_004354.4	124464	124465
+NW_001845284.1	1478	1479
+NT_033779.5	11216	11217
+NT_033778.4	432339	432340
+NT_037436.4	24192	24193
+NT_033777.3	835377	835378
+NC_004353.4	929	930
+NC_024512.1	9832	9833
+NW_001846712.1	562	563
+NW_001844935.1	7446	7447
+NW_007931083.1	3093	3094
+NC_024511.2	239	240
+(base) [asgarid@gw02 degenotate_ncbi_out]$ awk '!seen[$1]++' zerofold_sites.destnames.bed
+X	124464	124465
+2L	11216	11217
+2R	432339	432340
+3L	24192	24193
+3R	835377	835378
+4	929	930
+Y	9832	9833
+
+
+#################### per gene SFS for all populations ####################
+
+SFS.py make SFS for all pops using 
+
+zerofold_sites.destnames.bed
+fourfold_sites.destnames.bed
+fbgn_genes.bed
+
+
+#################### the logic of SFS.py ####################
+
+
+For each population (each *.masked.sync.gz file):
+
+  1) Load gene coordinates (fbgn_genes.bed) so every genomic position
+     can be assigned to a gene.
+
+  2) Load lists of 4-fold and 0-fold coding sites (from BED files)
+     as exact genomic positions.
+
+  3) Read the population’s gSYNC file line by line:
+       - Skip masked or malformed sites.
+       - Convert the 1-based genome position to 0-based BED coordinates.
+       - Check whether the site is 4-fold or 0-fold.
+       - Assign the site to a gene if it falls inside a gene interval.
+
+  4) For each usable site inside a gene:
+       - Parse A/T/C/G read counts.
+       - Treat the site as biallelic relative to the reference base.
+       - Compute minor allele count (MAC) and effective depth.
+       - Count the site as “callable” for that gene (adds to L).
+
+  5) If the site is polymorphic (MAC > 0):
+       - Project the allele count down to a fixed sample size (n_proj).
+       - Fold the projected spectrum.
+       - Add its contribution to the gene’s 4D or 0D SFS.
+
+  6) After all sites are processed:
+       - For each gene, compute bin 0 as:
+           bin0 = callable_sites − sum(polymorphic bins)
+
+  7) Write per-gene results for each population:
+       - Folded SFS for 4-fold sites (neutral)
+       - Folded SFS for 0-fold sites (selected)
+       - Callable site counts (L) for each class
+
+
+SFS.py defines callable explicitly and with a minimum depth
+
+MIN_DEPTH = 10 according to https://academic.oup.com/mbe/article/38/12/5782/6361628
