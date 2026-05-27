@@ -1,0 +1,16 @@
+For dN/dS and R/C analyses run the codes in the following order
+
+1 - Williams et al. 2023 flybase to NCBI
+2- identifying orthologs
+3- organize orthologs by folder
+4- dN/dS and R/C calculations
+5- Fig1 and ICC analyses; Fig4; Fig5 (any of these folder can be run after 4)
+
+
+For SFS calculations:
+
+1- SFS calculations
+2- alpha and omega calculations
+
+
+for annotation files and the files used for Fbgn to ncbi id conversion see "auxiliary files"
