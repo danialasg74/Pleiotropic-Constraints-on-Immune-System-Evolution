@@ -73,16 +73,16 @@ X	124464	124465
 Y	9832	9833
 
 
-#################### per gene SFS for all populations ####################
+#################### per domain SFS for all populations ####################
 
-SFS.py make SFS for all pops using 
+DomainSFS.py make SFS for all pops using 
 
 zerofold_sites.destnames.bed
 fourfold_sites.destnames.bed
-fbgn_genes.bed
+domain.bed
 
 
-#################### the logic of SFS.py ####################
+#################### the logic of an SFS.py ####################
 
 
 For each population (each *.masked.sync.gz file):
